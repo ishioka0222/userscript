@@ -2,7 +2,7 @@
 // @name            Copy Page Link
 // @name:ja         ページのリンクをコピー
 // @namespace       https://github.com/ishioka0222/userscript
-// @version         1.0.1
+// @version         1.0.2
 // @description     Adds Tampermonkey menu commands that copy the current page's title and URL to the clipboard as a text / Markdown / rich text link.
 // @description:ja  現在のページのタイトルと URL を、テキスト / Markdown / リッチテキストのリンクとしてクリップボードにコピーするメニューコマンドを Tampermonkey に追加します。
 // @author          Hiroki Ishioka
@@ -33,8 +33,11 @@
  * 実装上の前提
  *   - Tampermonkey のメニューから実行されるため、ページがフォーカスを持っていない場合がある。
  *     テキストのコピーはフォーカスに依存しない GM_setClipboard を使う。
- *     リッチテキストは text/html と text/plain を同時に書き込むため navigator.clipboard.write を試し、
- *     失敗した場合は GM_setClipboard(html, "html") にフォールバックする。
+ *     リッチテキストは text/html と text/plain を同時に書き込むため navigator.clipboard.write を使うが、
+ *     メニューから実行した直後はページがフォーカスを持たず "Document is not focused" で失敗するので、
+ *     ポップアップが閉じてフォーカスが戻るまで（最大 3 秒）待ってから書き込む。
+ *     それでも失敗した場合は Markdown リンクをテキストとしてコピーする
+ *     （GM_setClipboard(html, "html") は貼り付け可能な内容にならなかったため使わない）。
  */
 
 (function () {
@@ -64,29 +67,39 @@
     }
   };
 
-  // リッチテキスト（text/html + text/plain）をクリップボードにコピーして通知する
-  const copyRichText = async (html, plain, label, summary) => {
-    try {
+  // Tampermonkey のメニューから実行した直後はポップアップ側にフォーカスがあり、
+  // navigator.clipboard.write が "Document is not focused" で失敗するため、
+  // ページがフォーカスを取り戻すまで待つ
+  const waitForFocus = async (timeoutMs) => {
+    const start = Date.now();
+    while (!document.hasFocus() && Date.now() - start < timeoutMs) {
       window.focus();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return document.hasFocus();
+  };
+
+  // リッチテキスト（text/html + text/plain）をクリップボードにコピーして通知する。
+  // 失敗した場合は fallbackText（Markdown リンク）をテキストとしてコピーする
+  const copyRichText = async (html, plain, label, summary, fallbackText) => {
+    try {
+      await waitForFocus(3000);
       const item = new ClipboardItem({
         "text/html": new Blob([html], { type: "text/html" }),
         "text/plain": new Blob([plain], { type: "text/plain" }),
       });
       await navigator.clipboard.write([item]);
+      alert(`${label}をクリップボードにコピーしました:\n${summary}`);
     } catch (err) {
       console.warn(
-        "navigator.clipboard.write に失敗したため GM_setClipboard にフォールバックします:",
+        "リッチテキストのコピーに失敗したため、Markdown リンクをテキストとしてコピーします:",
         err,
       );
-      try {
-        GM_setClipboard(html, "html");
-      } catch (err2) {
-        console.error("クリップボードへのコピーに失敗しました:", err2);
-        prompt(`${label}（手動でコピーしてください）`, plain);
-        return;
-      }
+      copyText(
+        fallbackText,
+        `${label}のコピーに失敗したため、代わりに Markdown リンク`,
+      );
     }
-    alert(`${label}をクリップボードにコピーしました:\n${summary}`);
   };
 
   const copyTextLink = () => {
@@ -102,7 +115,13 @@
   const copyRichTextLink = () => {
     const { title, url } = getPageInfo();
     const html = `<a href="${escapeHtml(url)}">${escapeHtml(title)}</a>`;
-    copyRichText(html, url, "リッチテキストリンク", `${title}\n→ ${url}`);
+    copyRichText(
+      html,
+      url,
+      "リッチテキストリンク",
+      `${title}\n→ ${url}`,
+      `[${title}](${url})`,
+    );
   };
 
   GM_registerMenuCommand("テキストリンクをコピー", copyTextLink);
