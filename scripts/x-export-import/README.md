@@ -60,13 +60,14 @@ x.com の右下に「X Export / Import」ボタンが表示され、クリック
 
 以下が変更されると動作しなくなります。
 
-| 区分 | 対象               | 内容                                                                                                                                                                                             |
-| ---- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| DOM  | ユーザーセル       | `[data-testid="UserCell"]`                                                                                                                                                                       |
-| DOM  | スクリーンネーム   | セル内の最初の `a[href^="/"]` の `href`（先頭の `/` を除いた、`/` を含まないもの）                                                                                                               |
-| DOM  | 表示名             | セルの `innerText` の 1 行目                                                                                                                                                                     |
-| DOM  | リストメンバー一覧 | `[role="dialog"]` 内。配下の `overflow-y: auto\|scroll` かつ `scrollHeight > clientHeight + 100` の最初の `div` をスクロール                                                                     |
-| URL  | リストメンバー     | `/i/lists/<数字>/members`                                                                                                                                                                        |
-| URL  | ユーザー一覧       | `/<sn>/(following\|followers\|verified_followers\|followers_you_follow)`                                                                                                                         |
-| API  | リストに追加       | `POST {origin}/i/api/1.1/lists/members/create.json`、body `list_id=<id>&screen_name=<sn>`、headers `authorization: Bearer <公開トークン>` / `x-csrf-token: <Cookie ct0>`、`credentials: include` |
-| API  | ステータス         | 200 成功 / 403 日次上限または鍵アカウント / 429 レート制限                                                                                                                                       |
+| 区分 | 対象                       | 内容                                                                                                                                                                                             |
+| ---- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DOM  | ユーザーセル               | `[data-testid="UserCell"]`                                                                                                                                                                       |
+| DOM  | スクリーンネーム           | セル内の最初の `a[href^="/"]` の `href`（先頭の `/` を除いた、`/` を含まないもの）                                                                                                               |
+| DOM  | 表示名                     | セルの `innerText` の 1 行目                                                                                                                                                                     |
+| DOM  | リストメンバー一覧         | `[role="dialog"]` 内。配下の `overflow-y: auto\|scroll` かつ `scrollHeight > clientHeight + 100` の最初の `div` をスクロール                                                                     |
+| DOM  | 収集範囲（ダイアログ無し） | メインカラム `[data-testid="primaryColumn"]` 内のみ。右サイドバー `[data-testid="sidebarColumn"]`（「おすすめユーザー」も `UserCell` で描画される）は除外                                        |
+| URL  | リストメンバー             | `/i/lists/<数字>/members`                                                                                                                                                                        |
+| URL  | ユーザー一覧               | `/<sn>/(following\|followers\|verified_followers\|followers_you_follow)`                                                                                                                         |
+| API  | リストに追加               | `POST {origin}/i/api/1.1/lists/members/create.json`、body `list_id=<id>&screen_name=<sn>`、headers `authorization: Bearer <公開トークン>` / `x-csrf-token: <Cookie ct0>`、`credentials: include` |
+| API  | ステータス                 | 200 成功 / 403 日次上限または鍵アカウント / 429 レート制限                                                                                                                                       |
