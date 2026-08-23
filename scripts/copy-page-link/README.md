@@ -31,8 +31,8 @@ Tampermonkey のメニューに次の 3 つのコマンドを追加します。
 ## 動作の仕組み
 
 - テキストのコピーには `GM_setClipboard` を使います（Tampermonkey のメニューから実行した直後はページがフォーカスを持っていないことがあり、`navigator.clipboard` が失敗しうるため）。
-- リッチテキストは text/html と text/plain を同時に書き込むため `navigator.clipboard.write` を試し、失敗した場合は `GM_setClipboard(html, "html")` にフォールバックします。
-- どちらも失敗した場合は `prompt` で内容を表示し、手動でコピーできるようにします。
+- リッチテキストは text/html と text/plain を同時に書き込むため `navigator.clipboard.write` を使います。メニューから実行した直後はポップアップ側にフォーカスがあり失敗するため、ページがフォーカスを取り戻すまで（最大 3 秒）待ってから書き込みます。
+- それでも失敗した場合は、代わりに Markdown リンクをテキストとしてコピーし、その旨を表示します。
 
 ## 依存しているサイト内部の実装
 

@@ -2,7 +2,7 @@
 // @name            Box - Copy Link and Local Path
 // @name:ja         Box - リンクとローカルパスをコピー
 // @namespace       https://github.com/ishioka0222/userscript
-// @version         1.0.0
+// @version         1.0.1
 // @description     Adds Tampermonkey menu commands on Box that copy a shared link of the current file/folder as a Markdown / rich text link, or its local Box Drive path.
 // @description:ja  Box で開いているファイル / フォルダの共有リンクを Markdown / リッチテキストのリンクとして、またはローカルの Box Drive のパスをクリップボードにコピーするメニューコマンドを Tampermonkey に追加します。
 // @author          Hiroki Ishioka
@@ -58,8 +58,11 @@
  * 実装上の前提
  *   - Tampermonkey のメニューから実行されるため、ページがフォーカスを持っていない場合がある。
  *     テキストのコピーはフォーカスに依存しない GM_setClipboard を使う。
- *     リッチテキストは text/html と text/plain を同時に書き込むため navigator.clipboard.write を試し、
- *     失敗した場合は GM_setClipboard(html, "html") にフォールバックする。
+ *     リッチテキストは text/html と text/plain を同時に書き込むため navigator.clipboard.write を使うが、
+ *     メニューから実行した直後はページがフォーカスを持たず "Document is not focused" で失敗するので、
+ *     ポップアップが閉じてフォーカスが戻るまで（最大 3 秒）待ってから書き込む。
+ *     それでも失敗した場合は Markdown リンクをテキストとしてコピーする
+ *     （GM_setClipboard(html, "html") は貼り付け可能な内容にならなかったため使わない）。
  *   - 共有ボタンを押して開いた共有リンクのポップアップは閉じない（Esc で閉じられる）。
  *   - ファイルを直接開いた場合（パンくずリストが無い場合）は、フォルダ階層を取得できないため
  *     ローカルパス / フォルダパスは組み立てられない。
@@ -98,28 +101,39 @@
     }
   };
 
-  const copyRichText = async (html, plain, label, summary) => {
-    try {
+  // Tampermonkey のメニューから実行した直後はポップアップ側にフォーカスがあり、
+  // navigator.clipboard.write が "Document is not focused" で失敗するため、
+  // ページがフォーカスを取り戻すまで待つ
+  const waitForFocus = async (timeoutMs) => {
+    const start = Date.now();
+    while (!document.hasFocus() && Date.now() - start < timeoutMs) {
       window.focus();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return document.hasFocus();
+  };
+
+  // リッチテキスト（text/html + text/plain）をクリップボードにコピーして通知する。
+  // 失敗した場合は fallbackText（Markdown リンク）をテキストとしてコピーする
+  const copyRichText = async (html, plain, label, summary, fallbackText) => {
+    try {
+      await waitForFocus(3000);
       const item = new ClipboardItem({
         "text/html": new Blob([html], { type: "text/html" }),
         "text/plain": new Blob([plain], { type: "text/plain" }),
       });
       await navigator.clipboard.write([item]);
+      alert(`${label}をクリップボードにコピーしました:\n${summary}`);
     } catch (err) {
       console.warn(
-        "navigator.clipboard.write に失敗したため GM_setClipboard にフォールバックします:",
+        "リッチテキストのコピーに失敗したため、Markdown リンクをテキストとしてコピーします:",
         err,
       );
-      try {
-        GM_setClipboard(html, "html");
-      } catch (err2) {
-        console.error("クリップボードへのコピーに失敗しました:", err2);
-        prompt(`${label}（手動でコピーしてください）`, plain);
-        return;
-      }
+      copyText(
+        fallbackText,
+        `${label}のコピーに失敗したため、代わりに Markdown リンク`,
+      );
     }
-    alert(`${label}をクリップボードにコピーしました:\n${summary}`);
   };
 
   // ---------- Box の画面からの情報取得 ----------
@@ -270,6 +284,7 @@
       info.url,
       "リッチテキストリンク",
       `${info.linkText}\n→ ${info.url}`,
+      `[${info.linkText}](${info.url})`,
     );
   };
 
