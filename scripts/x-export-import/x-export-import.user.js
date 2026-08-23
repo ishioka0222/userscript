@@ -2,7 +2,7 @@
 // @name            X - Export / Import
 // @name:ja         X - エクスポート / インポート
 // @namespace       https://github.com/ishioka0222/userscript
-// @version         1.0.0
+// @version         1.0.1
 // @description     Exports following/followers/list members on X (Twitter) as TSV, and bulk-adds users to a list.
 // @description:ja  X（旧Twitter）でフォロー/フォロワー/リストメンバーの一覧をTSVでエクスポートし、ユーザーをリストへ一括追加（インポート）します。
 // @author          Hiroki Ishioka
@@ -46,6 +46,8 @@
  *     - リストメンバー一覧は [role="dialog"] 内に表示され、その配下の
  *       overflow-y が auto|scroll かつ scrollHeight > clientHeight + 100 の最初の div をスクロールする
  *       （following 等のページはダイアログが無いので window をスクロールする）
+ *     - following 等のページでは、メインカラム [data-testid="primaryColumn"] 内のセルのみ収集する
+ *       （右サイドバー [data-testid="sidebarColumn"] の「おすすめユーザー」も UserCell で描画されるため除外）
  *   [URL パターン]
  *     - /i/lists/<数字>/members
  *     - /<sn>/(following|followers|verified_followers|followers_you_follow)
@@ -121,6 +123,14 @@
   async function collectUsers(waitMs, onProgress, root) {
     // ダイアログがあればその中だけを対象にする（なければページ全体）
     const dialog = document.querySelector('[role="dialog"]') || document.body;
+    // ユーザーセルを収集する範囲。
+    // ダイアログが無いページでは、右サイドバーの「おすすめユーザー」も UserCell で描画されるため、
+    // メインカラム（primaryColumn）に限定する（無ければページ全体）。
+    const scope =
+      dialog !== document.body
+        ? dialog
+        : document.querySelector('[data-testid="primaryColumn"]') ||
+          document.body;
     // スクロール可能な要素を探す（自分のパネルは除外）
     const scroller = [...dialog.querySelectorAll("div")].find(
       (e) =>
@@ -130,7 +140,9 @@
     );
     const users = new Map();
     const harvest = () => {
-      dialog.querySelectorAll('[data-testid="UserCell"]').forEach((cell) => {
+      scope.querySelectorAll('[data-testid="UserCell"]').forEach((cell) => {
+        // 念のためサイドバー配下のセルは除外する
+        if (cell.closest('[data-testid="sidebarColumn"]')) return;
         const link = cell.querySelector('a[href^="/"]');
         if (!link) return;
         const sn = link.getAttribute("href").slice(1);
