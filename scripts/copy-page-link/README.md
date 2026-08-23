@@ -1,4 +1,4 @@
-# Any Site - Copy Page Link
+# Copy Page Link
 
 任意のページで、ページのタイトルと URL をリンクとしてクリップボードにコピーします。
 Tampermonkey のメニューに次の 3 つのコマンドを追加します。
@@ -11,7 +11,7 @@ Tampermonkey のメニューに次の 3 つのコマンドを追加します。
 
 ## インストール
 
-[Install](https://raw.githubusercontent.com/ishioka0222/userscript/master/scripts/any-site-copy-page-link/any-site-copy-page-link.user.js)
+[Install](https://raw.githubusercontent.com/ishioka0222/userscript/master/scripts/copy-page-link/copy-page-link.user.js)
 
 ※ 事前に [Tampermonkey](https://www.tampermonkey.net/) などのユーザースクリプトマネージャーが必要です。
 
@@ -25,7 +25,7 @@ Tampermonkey のメニューに次の 3 つのコマンドを追加します。
 
 1. リンクをコピーしたいページを開きます。
 2. ツールバーの Tampermonkey アイコンをクリックします。
-3. 「Any Site - Copy Page Link」の下に表示されるコマンド（テキスト / Markdown / リッチテキスト）をクリックします。
+3. 「Copy Page Link」の下に表示されるコマンド（テキスト / Markdown / リッチテキスト）をクリックします。
 4. クリップボードにコピーされ、内容が alert で表示されます。
 
 ## 動作の仕組み

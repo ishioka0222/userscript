@@ -1,16 +1,16 @@
 // ==UserScript==
-// @name            Any Site - Copy Page Link
-// @name:ja         任意のサイト - ページのリンクをコピー
+// @name            Copy Page Link
+// @name:ja         ページのリンクをコピー
 // @namespace       https://github.com/ishioka0222/userscript
-// @version         1.0.0
+// @version         1.0.1
 // @description     Adds Tampermonkey menu commands that copy the current page's title and URL to the clipboard as a text / Markdown / rich text link.
 // @description:ja  現在のページのタイトルと URL を、テキスト / Markdown / リッチテキストのリンクとしてクリップボードにコピーするメニューコマンドを Tampermonkey に追加します。
 // @author          Hiroki Ishioka
 // @license         MIT
-// @homepageURL     https://github.com/ishioka0222/userscript/tree/master/scripts/any-site-copy-page-link
+// @homepageURL     https://github.com/ishioka0222/userscript/tree/master/scripts/copy-page-link
 // @supportURL      https://github.com/ishioka0222/userscript/issues
-// @updateURL       https://raw.githubusercontent.com/ishioka0222/userscript/master/scripts/any-site-copy-page-link/any-site-copy-page-link.user.js
-// @downloadURL     https://raw.githubusercontent.com/ishioka0222/userscript/master/scripts/any-site-copy-page-link/any-site-copy-page-link.user.js
+// @updateURL       https://raw.githubusercontent.com/ishioka0222/userscript/master/scripts/copy-page-link/copy-page-link.user.js
+// @downloadURL     https://raw.githubusercontent.com/ishioka0222/userscript/master/scripts/copy-page-link/copy-page-link.user.js
 // @match           *://*/*
 // @run-at          document-idle
 // @noframes
