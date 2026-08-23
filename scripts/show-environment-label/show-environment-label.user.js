@@ -2,7 +2,7 @@
 // @name            Show Environment Label
 // @name:ja         環境ラベルを表示
 // @namespace       https://github.com/ishioka0222/userscript
-// @version         1.1.0
+// @version         1.1.1
 // @description     Shows a label (e.g. "Production" / "Development") on pages whose URL matches your rules, so you always know which environment you are looking at. Rules are stored locally; no network access.
 // @description:ja  URL がルールに一致するページに「本番」「開発」などのラベルを常時表示し、今どの環境を操作しているかを分かるようにします。設定はローカルに保存され、外部通信は行いません。
 // @author          Hiroki Ishioka
@@ -54,6 +54,8 @@
  *     （<style> 要素や innerHTML は使わない）。
  *   - SPA での URL 変化に追従するため、location.href を 1 秒間隔で監視する。
  *   - ラベルの要素は document.documentElement 直下に置き、ページが body を差し替えても消えないようにする。
+ *   - CSP の sandbox（allow-modals なし）で alert / prompt が無効化されているページがあるため（例: Db2 管理コンソール）、
+ *     入力フォームと通知（トースト）も Shadow DOM 内の自前 UI で行い、alert / prompt は使わない。
  */
 
 (function () {
@@ -505,64 +507,242 @@
     render();
   };
 
-  // ---------- 追加フロー ----------
+  // ---------- 追加フロー（自前のフォームとトースト） ----------
+  // ページによっては CSP の sandbox で alert / prompt が無効化されているため、
+  // 入力と通知は Shadow DOM 内の自前 UI で行う
 
-  const promptColor = (defaultHex) => {
-    const list = PALETTE.map(([name], i) => `${i + 1}=${name}`).join(" ");
-    const input = prompt(
-      `背景色を番号（${list}）または #RRGGBB で入力してください。`,
-      defaultHex,
+  const fieldStyle = {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "6px 8px",
+    border: "1px solid #bbb",
+    borderRadius: "6px",
+    background: "#fff",
+    color: "#222",
+    fontFamily: FONT,
+    fontSize: "13px",
+  };
+  const uiButton = (text, onClick, primary = false) =>
+    el(
+      "button",
+      {
+        padding: "6px 14px",
+        marginRight: "8px",
+        border: primary ? "none" : "1px solid #999",
+        borderRadius: "6px",
+        background: primary ? "#1976d2" : "#f5f5f5",
+        color: primary ? "#fff" : "#222",
+        fontFamily: FONT,
+        fontSize: "13px",
+        fontWeight: "bold",
+        cursor: "pointer",
+      },
+      { textContent: text, onclick: onClick },
     );
-    if (input === null) return null;
-    const v = input.trim();
-    const n = Number(v);
-    if (Number.isInteger(n) && n >= 1 && n <= PALETTE.length) {
-      return PALETTE[n - 1][1];
+
+  // 通知（alert の代わり）
+  const toastEl = el("div", {
+    position: "fixed",
+    top: "48px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    maxWidth: "80vw",
+    padding: "8px 14px",
+    borderRadius: "6px",
+    background: "#323232",
+    color: "#fff",
+    fontFamily: FONT,
+    fontSize: "13px",
+    lineHeight: "1.4",
+    boxShadow: "0 2px 8px rgba(0,0,0,.4)",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-all",
+    display: "none",
+    pointerEvents: "none",
+  });
+  shadow.append(toastEl);
+  let toastTimer = null;
+  const notify = (message, isError = false) => {
+    toastEl.textContent = message;
+    toastEl.style.background = isError ? "#c62828" : "#323232";
+    toastEl.style.display = "block";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(
+      () => {
+        toastEl.style.display = "none";
+      },
+      isError ? 6000 : 4000,
+    );
+  };
+
+  // 入力フォーム（prompt の代わり）
+  //   fields: [{ key, label, type: "text" | "select", value, options: [[value, text]], placeholder }]
+  //   validate: (values) => エラーメッセージ | null
+  //   戻り値: Promise<values | null>（キャンセルなら null）
+  const showForm = ({ title, intro, fields, validate, submitText = "追加" }) =>
+    new Promise((resolve) => {
+      const overlay = el("div", {
+        position: "fixed",
+        inset: "0",
+        background: "rgba(0,0,0,.45)",
+        pointerEvents: "auto",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: FONT,
+        fontSize: "13px",
+        color: "#222",
+      });
+      const panel = el("div", {
+        width: "min(520px, 92vw)",
+        maxHeight: "88vh",
+        overflowY: "auto",
+        background: "#fff",
+        borderRadius: "10px",
+        boxShadow: "0 8px 32px rgba(0,0,0,.4)",
+        padding: "14px",
+        boxSizing: "border-box",
+      });
+      panel.append(
+        el(
+          "div",
+          { fontWeight: "bold", fontSize: "14px", marginBottom: "6px" },
+          { textContent: title },
+        ),
+      );
+      if (intro) {
+        panel.append(
+          el(
+            "div",
+            {
+              color: "#555",
+              marginBottom: "10px",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
+            },
+            { textContent: intro },
+          ),
+        );
+      }
+      const inputs = {};
+      for (const f of fields) {
+        const row = el("label", { display: "block", marginBottom: "8px" });
+        row.append(
+          el(
+            "div",
+            { fontSize: "12px", color: "#333", marginBottom: "2px" },
+            { textContent: f.label },
+          ),
+        );
+        let input;
+        if (f.type === "select") {
+          input = el("select", fieldStyle);
+          for (const [value, text] of f.options) {
+            const option = el("option", {}, { value, textContent: text });
+            if (value === f.value) option.selected = true;
+            input.append(option);
+          }
+        } else {
+          input = el("input", fieldStyle, {
+            type: "text",
+            value: f.value || "",
+            placeholder: f.placeholder || "",
+            spellcheck: false,
+          });
+        }
+        inputs[f.key] = input;
+        row.append(input);
+        panel.append(row);
+      }
+      const message = el("div", {
+        minHeight: "1.2em",
+        color: "#c62828",
+        whiteSpace: "pre-wrap",
+      });
+      const close = (result) => {
+        overlay.remove();
+        resolve(result);
+      };
+      const submit = () => {
+        const values = {};
+        for (const key of Object.keys(inputs)) values[key] = inputs[key].value;
+        const error = validate ? validate(values) : null;
+        if (error) {
+          message.textContent = error;
+          return;
+        }
+        close(values);
+      };
+      const buttons = el("div", { marginTop: "10px" });
+      buttons.append(
+        uiButton(submitText, submit, true),
+        uiButton("キャンセル", () => close(null)),
+      );
+      panel.append(message, buttons);
+      overlay.append(panel);
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close(null);
+      });
+      panel.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") close(null);
+        if (e.key === "Enter" && e.target.tagName !== "BUTTON") submit();
+      });
+      shadow.append(overlay);
+      const first = fields.length ? inputs[fields[0].key] : null;
+      if (first) first.focus();
+    });
+
+  // 名前 / 環境 / 色 の入力欄（instance と rule で共通）
+  const labelFieldDefs = () => [
+    {
+      key: "name",
+      label: "名前（インスタンス名など）",
+      type: "text",
+      placeholder: "例: db2_prod",
+    },
+    {
+      key: "env",
+      label: "環境",
+      type: "select",
+      value: config.environments.length ? config.environments[0].id : "",
+      options: [
+        ["", "（環境なし）"],
+        ...config.environments.map((e) => [e.id, `${e.id}: ${e.name}`]),
+      ],
+    },
+    {
+      key: "bg",
+      label: "背景色（環境の色を使う場合は「自動」のまま）",
+      type: "select",
+      value: "",
+      options: [
+        ["", "自動（環境の色 / 既定）"],
+        ...PALETTE.map(([name, hex]) => [hex, `${name} ${hex}`]),
+      ],
+    },
+    {
+      key: "bgCustom",
+      label: "背景色を直接指定（#RRGGBB。入力すると優先）",
+      type: "text",
+      placeholder: "#d32f2f",
+    },
+  ];
+  const validateLabelFields = (v) => {
+    if (!v.name.trim() && !v.env) return "名前または環境のどちらかは必須です。";
+    if (v.bgCustom.trim() && !/^#[0-9a-f]{6}$/i.test(v.bgCustom.trim())) {
+      return "背景色は #RRGGBB 形式で入力してください。";
     }
-    if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
-    alert("色の指定が不正です。");
+    if (!v.env && !v.bg && !v.bgCustom.trim()) {
+      return "環境を指定しない場合は背景色を選んでください。";
+    }
     return null;
   };
-
-  // 環境 ID を入力させる。戻り値: 環境 ID / null（環境なし）/ undefined（キャンセル・不正）
-  const promptEnv = () => {
-    if (!config.environments.length) return null;
-    const list = config.environments
-      .map((e) => `${e.id}=${e.name}`)
-      .join(" / ");
-    const input = prompt(
-      `環境 ID を入力してください（${list}）。\n環境を使わない場合は空のままにしてください。`,
-      config.environments[0].id,
-    );
-    if (input === null) return undefined;
-    const id = input.trim();
-    if (!id) return null;
-    if (!config.environments.some((e) => e.id === id)) {
-      alert(`環境 ID "${id}" は environments に定義されていません。`);
-      return undefined;
-    }
-    return id;
-  };
-
-  // 名前 → 環境 → （環境なしの場合のみ）色 を順に入力させる。キャンセルなら null
-  const promptLabelFields = (intro) => {
-    const name = prompt(
-      `${intro}\n名前（インスタンス名など）を入力してください。`,
-      "",
-    );
-    if (name === null) return null;
-    const env = promptEnv();
-    if (env === undefined) return null;
+  const toLabelFields = (v) => {
     const fields = {};
-    if (name.trim()) fields.name = name.trim();
-    if (env) fields.env = env;
-    if (!env) {
-      if (!fields.name) {
-        alert("名前は必須です。");
-        return null;
-      }
-      const bg = promptColor(PALETTE[0][1]);
-      if (!bg) return null;
+    if (v.name.trim()) fields.name = v.name.trim();
+    if (v.env) fields.env = v.env;
+    const bg = v.bgCustom.trim() ? v.bgCustom.trim().toLowerCase() : v.bg;
+    if (bg) {
       fields.bg = bg;
       fields.fg = pickForeground(bg);
     }
@@ -577,30 +757,33 @@
     );
 
   // 未登録の instance を追加する
-  const addInstanceForCurrent = () => {
+  const addInstanceForCurrent = async () => {
     if (!current || current.kind !== "unregistered") return;
     const { service, groups } = current;
     const detail = Object.entries(groups)
       .map(([k, v]) => `${k} = ${v}`)
       .join("\n");
-    const fields = promptLabelFields(
-      `「${service.name}」の未登録の環境を追加します。\n${detail}`,
-    );
-    if (!fields) return;
+    const values = await showForm({
+      title: `未登録の環境を追加: ${service.name}`,
+      intro: detail,
+      fields: labelFieldDefs(),
+      validate: validateLabelFields,
+    });
+    if (!values) return;
     const target =
       config.services.find((s) => s === service) ||
       config.services.find(
         (s) => s.name === service.name && s.pattern === service.pattern,
       );
     if (!target) {
-      alert("対象の service が見つかりません。設定を確認してください。");
+      notify("対象の service が見つかりません。設定を確認してください。", true);
       return;
     }
-    const instance = { match: { ...groups }, ...fields };
+    const instance = { match: { ...groups }, ...toLabelFields(values) };
     target.instances.push(instance);
     saveConfig(config);
     refresh();
-    alert(`追加しました: ${labelOf(instance)}`);
+    notify(`追加しました: ${labelOf(instance)}`);
   };
   addBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -612,27 +795,35 @@
   });
 
   // 現在の URL を元にルールを追加する
-  const addRuleForCurrent = () => {
-    const defaultPattern = `${location.origin}/*`;
-    const pattern = prompt(
-      "ルールの pattern を入力してください（`*` は任意の文字列。`/.../` で正規表現）。",
-      defaultPattern,
-    );
-    if (pattern === null) return;
-    try {
-      compilePattern(pattern.trim());
-    } catch (err) {
-      alert(`pattern が不正です: ${err.message}`);
-      return;
-    }
-    const fields = promptLabelFields("ルールを追加します。");
-    if (!fields) return;
-    const rule = { pattern: pattern.trim(), ...fields };
+  const addRuleForCurrent = async () => {
+    const values = await showForm({
+      title: "この URL のルールを追加",
+      fields: [
+        {
+          key: "pattern",
+          label: "pattern（`*` は任意の文字列。`/.../` で正規表現）",
+          type: "text",
+          value: `${location.origin}/*`,
+        },
+        ...labelFieldDefs(),
+      ],
+      validate: (v) => {
+        if (!v.pattern.trim()) return "pattern は必須です。";
+        try {
+          compilePattern(v.pattern.trim());
+        } catch (err) {
+          return `pattern が不正です: ${err.message}`;
+        }
+        return validateLabelFields(v);
+      },
+    });
+    if (!values) return;
+    const rule = { pattern: values.pattern.trim(), ...toLabelFields(values) };
     config.rules.push(rule);
     saveConfig(config);
     refresh();
-    alert(
-      `ルールを追加しました。\n${rule.pattern} → ${labelOf(rule)}\n（詳細な設定は「設定を開く」で編集できます）`,
+    notify(
+      `ルールを追加しました。\n${rule.pattern} → ${labelOf(rule)}\n（詳細は「設定を開く」で編集できます）`,
     );
   };
 
