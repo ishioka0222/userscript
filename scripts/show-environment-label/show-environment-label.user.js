@@ -2,7 +2,7 @@
 // @name            Show Environment Label
 // @name:ja         環境ラベルを表示
 // @namespace       https://github.com/ishioka0222/userscript
-// @version         1.0.0
+// @version         1.1.0
 // @description     Shows a label (e.g. "Production" / "Development") on pages whose URL matches your rules, so you always know which environment you are looking at. Rules are stored locally; no network access.
 // @description:ja  URL がルールに一致するページに「本番」「開発」などのラベルを常時表示し、今どの環境を操作しているかを分かるようにします。設定はローカルに保存され、外部通信は行いません。
 // @author          Hiroki Ishioka
@@ -33,10 +33,13 @@
  *
  * 設定 JSON の構造（詳細は README）
  *   {
- *     "defaults":  { "position": "top-right", "titlePrefix": true, "frame": false },
- *     "services":  [ { "name": "...", "pattern": "...", "instances": [ { "match": {...}, "label": "...", ... } ] } ],
- *     "rules":     [ { "pattern": "...", "label": "...", "bg": "#...", "fg": "#...", "position": "...", "titlePrefix": true, "frame": false } ]
+ *     "defaults":      { "position": "top-right", "titlePrefix": true, "frame": false, "labelFormat": "{env} {name}" },
+ *     "environments":  [ { "id": "prod", "name": "本番", "bg": "#...", "fg": "#...", "frame": true } ],
+ *     "services":      [ { "name": "...", "pattern": "...", "instances": [ { "match": {...}, "name": "...", "env": "prod" } ] } ],
+ *     "rules":         [ { "pattern": "...", "name": "...", "env": "...", "label": "...", "bg": "#...", "fg": "#...", "position": "...", "titlePrefix": true, "frame": false } ]
  *   }
+ *   ラベル文言: label があればそれ。無ければ labelFormat の {env}（環境名）と {name} から組み立てる。
+ *   スタイル（bg / fg / position / titlePrefix / frame）の優先順位: instance・rule → environment → defaults。
  *   pattern の記法
  *     - 簡易形: `*` は任意の文字列、`{name}` は `/` を含まない 1 区切り、`{name:正規表現}` は指定した正規表現。
  *               先頭から末尾まで URL 全体（location.href）と照合する。
@@ -69,7 +72,13 @@
   ];
 
   const DEFAULT_CONFIG = {
-    defaults: { position: "top-right", titlePrefix: true, frame: false },
+    defaults: {
+      position: "top-right",
+      titlePrefix: true,
+      frame: false,
+      labelFormat: "{env} {name}",
+    },
+    environments: [],
     services: [],
     rules: [],
   };
@@ -112,6 +121,7 @@
     }
     const config = {
       defaults: { ...DEFAULT_CONFIG.defaults, ...(input.defaults || {}) },
+      environments: Array.isArray(input.environments) ? input.environments : [],
       services: Array.isArray(input.services) ? input.services : [],
       rules: Array.isArray(input.rules) ? input.rules : [],
     };
@@ -120,13 +130,42 @@
         `defaults.position が不正です: ${config.defaults.position}（${POSITIONS.join(" / ")}）`,
       );
     }
-    const checkLabelFields = (obj, where) => {
-      if (typeof obj.label !== "string" || !obj.label) {
-        throw new Error(`${where}: label は必須です。`);
-      }
+    if (typeof config.defaults.labelFormat !== "string") {
+      throw new Error("defaults.labelFormat は文字列である必要があります。");
+    }
+    const checkStyleFields = (obj, where) => {
       if (obj.position !== undefined && !POSITIONS.includes(obj.position)) {
         throw new Error(`${where}: position が不正です: ${obj.position}`);
       }
+    };
+    const envIds = new Set();
+    config.environments.forEach((env, i) => {
+      const where = `environments[${i}]`;
+      if (typeof env.id !== "string" || !env.id) {
+        throw new Error(`${where}: id は必須です。`);
+      }
+      if (envIds.has(env.id)) {
+        throw new Error(`${where}: id が重複しています: ${env.id}`);
+      }
+      envIds.add(env.id);
+      if (typeof env.name !== "string" || !env.name) {
+        throw new Error(`${where}: name は必須です。`);
+      }
+      checkStyleFields(env, where);
+    });
+    const checkLabelFields = (obj, where) => {
+      const hasLabel = typeof obj.label === "string" && obj.label;
+      const hasName = typeof obj.name === "string" && obj.name;
+      const hasEnv = typeof obj.env === "string" && obj.env;
+      if (!hasLabel && !hasName && !hasEnv) {
+        throw new Error(`${where}: label、name、env のいずれかは必須です。`);
+      }
+      if (hasEnv && !envIds.has(obj.env)) {
+        throw new Error(
+          `${where}: env "${obj.env}" が environments に定義されていません。`,
+        );
+      }
+      checkStyleFields(obj, where);
     };
     config.services.forEach((service, i) => {
       const where = `services[${i}]`;
@@ -202,18 +241,41 @@
   // 返り値: { kind: "label", label, bg, fg, position, titlePrefix, frame }
   //       | { kind: "unregistered", service, groups }
   //       | null
+  // 表示するラベル文言を決める。label があればそれを使い、無ければ labelFormat から組み立てる
+  const formatLabel = (obj, env, labelFormat) => {
+    if (obj.label) return obj.label;
+    const envName = env ? env.name : "";
+    const name = obj.name || "";
+    if (!envName) return name;
+    if (!name) return envName;
+    return labelFormat
+      .replace(/\{env\}/g, envName)
+      .replace(/\{name\}/g, name)
+      .trim();
+  };
+
   const resolve = (config, href) => {
     const d = config.defaults;
-    const toLabel = (obj) => ({
-      kind: "label",
-      label: obj.label,
-      bg: obj.bg || "#d32f2f",
-      fg: obj.fg || pickForeground(obj.bg || "#d32f2f"),
-      position: obj.position || d.position,
-      titlePrefix:
-        obj.titlePrefix !== undefined ? obj.titlePrefix : d.titlePrefix,
-      frame: obj.frame !== undefined ? obj.frame : d.frame,
-    });
+    const envById = new Map(config.environments.map((e) => [e.id, e]));
+    // スタイルは instance・rule → environment → defaults の順に採用する
+    const toLabel = (obj) => {
+      const env = obj.env ? envById.get(obj.env) : null;
+      const pick = (key) => {
+        if (obj[key] !== undefined) return obj[key];
+        if (env && env[key] !== undefined) return env[key];
+        return d[key];
+      };
+      const bg = pick("bg") || "#d32f2f";
+      return {
+        kind: "label",
+        label: formatLabel(obj, env, d.labelFormat),
+        bg,
+        fg: pick("fg") || pickForeground(bg),
+        position: pick("position"),
+        titlePrefix: pick("titlePrefix"),
+        frame: pick("frame"),
+      };
+    };
 
     for (const service of config.services) {
       let m;
@@ -462,23 +524,69 @@
     return null;
   };
 
+  // 環境 ID を入力させる。戻り値: 環境 ID / null（環境なし）/ undefined（キャンセル・不正）
+  const promptEnv = () => {
+    if (!config.environments.length) return null;
+    const list = config.environments
+      .map((e) => `${e.id}=${e.name}`)
+      .join(" / ");
+    const input = prompt(
+      `環境 ID を入力してください（${list}）。\n環境を使わない場合は空のままにしてください。`,
+      config.environments[0].id,
+    );
+    if (input === null) return undefined;
+    const id = input.trim();
+    if (!id) return null;
+    if (!config.environments.some((e) => e.id === id)) {
+      alert(`環境 ID "${id}" は environments に定義されていません。`);
+      return undefined;
+    }
+    return id;
+  };
+
+  // 名前 → 環境 → （環境なしの場合のみ）色 を順に入力させる。キャンセルなら null
+  const promptLabelFields = (intro) => {
+    const name = prompt(
+      `${intro}\n名前（インスタンス名など）を入力してください。`,
+      "",
+    );
+    if (name === null) return null;
+    const env = promptEnv();
+    if (env === undefined) return null;
+    const fields = {};
+    if (name.trim()) fields.name = name.trim();
+    if (env) fields.env = env;
+    if (!env) {
+      if (!fields.name) {
+        alert("名前は必須です。");
+        return null;
+      }
+      const bg = promptColor(PALETTE[0][1]);
+      if (!bg) return null;
+      fields.bg = bg;
+      fields.fg = pickForeground(bg);
+    }
+    return fields;
+  };
+
+  const labelOf = (obj) =>
+    formatLabel(
+      obj,
+      obj.env ? config.environments.find((e) => e.id === obj.env) : null,
+      config.defaults.labelFormat,
+    );
+
   // 未登録の instance を追加する
   const addInstanceForCurrent = () => {
     if (!current || current.kind !== "unregistered") return;
     const { service, groups } = current;
-    const label = prompt(
-      `「${service.name}」のラベルを入力してください。\n${Object.entries(groups)
-        .map(([k, v]) => `${k} = ${v}`)
-        .join("\n")}`,
-      "",
+    const detail = Object.entries(groups)
+      .map(([k, v]) => `${k} = ${v}`)
+      .join("\n");
+    const fields = promptLabelFields(
+      `「${service.name}」の未登録の環境を追加します。\n${detail}`,
     );
-    if (label === null) return;
-    if (!label.trim()) {
-      alert("ラベルは必須です。");
-      return;
-    }
-    const bg = promptColor(PALETTE[0][1]);
-    if (!bg) return;
+    if (!fields) return;
     const target =
       config.services.find((s) => s === service) ||
       config.services.find(
@@ -488,14 +596,11 @@
       alert("対象の service が見つかりません。設定を確認してください。");
       return;
     }
-    target.instances.push({
-      match: { ...groups },
-      label: label.trim(),
-      bg,
-      fg: pickForeground(bg),
-    });
+    const instance = { match: { ...groups }, ...fields };
+    target.instances.push(instance);
     saveConfig(config);
     refresh();
+    alert(`追加しました: ${labelOf(instance)}`);
   };
   addBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -520,24 +625,14 @@
       alert(`pattern が不正です: ${err.message}`);
       return;
     }
-    const label = prompt("ラベルを入力してください。", "");
-    if (label === null) return;
-    if (!label.trim()) {
-      alert("ラベルは必須です。");
-      return;
-    }
-    const bg = promptColor(PALETTE[0][1]);
-    if (!bg) return;
-    config.rules.push({
-      pattern: pattern.trim(),
-      label: label.trim(),
-      bg,
-      fg: pickForeground(bg),
-    });
+    const fields = promptLabelFields("ルールを追加します。");
+    if (!fields) return;
+    const rule = { pattern: pattern.trim(), ...fields };
+    config.rules.push(rule);
     saveConfig(config);
     refresh();
     alert(
-      `ルールを追加しました。\n${pattern.trim()} → ${label.trim()}\n（詳細な設定は「設定を開く」で編集できます）`,
+      `ルールを追加しました。\n${rule.pattern} → ${labelOf(rule)}\n（詳細な設定は「設定を開く」で編集できます）`,
     );
   };
 
@@ -580,7 +675,8 @@
       {
         textContent:
           "JSON を編集して「保存」を押してください。エクスポートは「コピー」、インポートは貼り付けて「保存」。\n" +
-          "pattern: `*` は任意の文字列、`{name}` は `/` を含まない 1 区切り、`{name:正規表現}`、または `/正規表現/`。",
+          "pattern: `*` は任意の文字列、`{name}` は `/` を含まない 1 区切り、`{name:正規表現}`、または `/正規表現/`。\n" +
+          "environments に環境（id / name / 色）を定義し、instance や rule に name と env を書くと「{env} {name}」形式のラベルになります（label を書けばそれが優先）。",
       },
     );
     const textarea = el(
@@ -669,7 +765,17 @@
   };
 
   const exampleConfig = () => ({
-    defaults: { position: "top-right", titlePrefix: true, frame: false },
+    defaults: {
+      position: "top-right",
+      titlePrefix: true,
+      frame: false,
+      labelFormat: "{env} {name}",
+    },
+    environments: [
+      { id: "dev", name: "開発", bg: "#388e3c", fg: "#ffffff" },
+      { id: "test", name: "検証", bg: "#fbc02d", fg: "#000000" },
+      { id: "prod", name: "本番", bg: "#d32f2f", fg: "#ffffff", frame: true },
+    ],
     services: [
       {
         name: "Example Service",
@@ -677,16 +783,23 @@
         instances: [
           {
             match: { service: "db", instance: "prod-0001" },
-            label: "本番 DB",
-            bg: "#d32f2f",
-            fg: "#ffffff",
-            frame: true,
+            name: "db_prod",
+            env: "prod",
+          },
+          {
+            match: { service: "db", instance: "test-0001" },
+            name: "db_test1",
+            env: "test",
+          },
+          {
+            match: { service: "db", instance: "test-0002" },
+            name: "db_test2",
+            env: "test",
           },
           {
             match: { service: "db", instance: "dev-0001" },
-            label: "開発 DB",
-            bg: "#fbc02d",
-            fg: "#000000",
+            label: "開発 DB（label を直接指定した例）",
+            env: "dev",
           },
         ],
       },
@@ -694,9 +807,7 @@
     rules: [
       {
         pattern: "https://*.dev.example.com/*",
-        label: "開発",
-        bg: "#fbc02d",
-        fg: "#000000",
+        env: "dev",
         titlePrefix: false,
       },
       {
