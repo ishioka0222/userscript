@@ -35,10 +35,11 @@
  * これらの名前や挙動が変わると、このスクリプトは動作しなくなる。
  */
 
-/* global dict_ct:writable, ct_refresh, condition, times, timer1:writable */
-
 (function () {
   "use strict";
+
+  // @grant none のためこのスクリプトはページのコンテキストで動作し、
+  // サイト側が var / function で宣言したグローバルには window 経由でアクセスできる。
 
   // ct_refresh 関数で times と比較される上限値の最大値
   // （dictV によって 21 または 11 だが、大きいほうに合わせておけばどちらでも即座に終了する）
@@ -47,22 +48,22 @@
   // dict_ct 関数の直後に呼び出す関数
   const afterDictCt = () => {
     // 秒数をカウント中でなければ何もしない（演奏終了時など）
-    if (condition !== "count") {
+    if (window.condition !== "count") {
       return;
     }
     // 秒数に上限値を設定する。
-    times = TIMES_MAX;
+    window.times = TIMES_MAX;
     // dict_ct 関数で設定されたタイマーを解除する。
-    clearTimeout(timer1);
+    clearTimeout(window.timer1);
     // ct_refresh 関数を直ちに実行する。
-    timer1 = setTimeout(ct_refresh, 0);
+    window.timer1 = setTimeout(window.ct_refresh, 0);
   };
 
   // dict_ct 関数をラップする。
   // audio の ended イベントリスナーは dict_play 実行時に dict_ct を参照して登録されるため、
   // ページ読み込み後・再生開始前に差し替えておけばラップ後の関数が呼ばれる。
-  const originalDictCt = dict_ct;
-  dict_ct = () => {
+  const originalDictCt = window.dict_ct;
+  window.dict_ct = () => {
     originalDictCt();
     afterDictCt();
   };
