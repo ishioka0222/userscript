@@ -2,7 +2,7 @@
 // @name            Save Page as Markdown
 // @name:ja         ページを Markdown で保存
 // @namespace       https://github.com/ishioka0222/userscript
-// @version         1.0.0
+// @version         1.1.0
 // @description     Converts the main content (or a picked element) of the current page to Markdown and downloads it as a .md file. Conversion runs locally with pinned, hash-verified libraries.
 // @description:ja  表示中のページの本文（または選んだ要素）を Markdown に変換して .md ファイルとしてダウンロードします。変換はローカルで行われ、ライブラリはバージョン固定 + ハッシュ検証付きで取り込みます。
 // @author          Hiroki Ishioka
@@ -196,7 +196,7 @@
       {},
       {
         href: url,
-        download: `${sanitizeFileName(document.title)}_${today()}.md`,
+        download: `${sanitizeFileName(document.title)}.md`,
       },
     );
     document.body.appendChild(a);
