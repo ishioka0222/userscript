@@ -2,7 +2,7 @@
 // @name            Box - Copy Link and Local Path
 // @name:ja         Box - リンクとローカルパスをコピー
 // @namespace       https://github.com/ishioka0222/userscript
-// @version         1.0.1
+// @version         1.0.2
 // @description     Adds Tampermonkey menu commands on Box that copy a shared link of the current file/folder as a Markdown / rich text link, or its local Box Drive path.
 // @description:ja  Box で開いているファイル / フォルダの共有リンクを Markdown / リッチテキストのリンクとして、またはローカルの Box Drive のパスをクリップボードにコピーするメニューコマンドを Tampermonkey に追加します。
 // @author          Hiroki Ishioka
@@ -39,14 +39,14 @@
  * 依存しているサイト内部の実装（Box Web アプリ）
  *   [ファイル / フォルダの判定]
  *     - ファイルプレビュー: .preview-container（存在すればファイルとして扱う）
- *     - パンくずリスト:     .ItemListBreadcrumb
+ *     - パンくずリスト:     nav.Breadcrumb
  *     - ファイル名:         .preview-container 内の h1[data-testid="preview-item-name"]
  *   [パンくずリスト → フォルダ階層]
  *     - 「その他のフォルダ」ボタン: button.FolderTreeButton（aria-expanded / aria-controls でメニューを参照）
  *     - 折りたたまれたフォルダ:     上記メニュー内の li > a
- *     - 表示中のリスト:             .ItemListBreadcrumb-list:not(.is-measurer)（.is-measurer は幅測定用の複製）
- *     - 階層のリンク:               .ItemListBreadcrumb-link
- *     - 現在のフォルダ名:           .ItemListBreadcrumb-currentItemTitle（バッジを含まないタイトル要素）
+ *     - 表示中のリスト:             .Breadcrumb-list:not(.is-measurer)（.is-measurer は幅測定用の複製）
+ *     - 階層のリンク:               .Breadcrumb-link
+ *     - 現在のフォルダ名:           .Breadcrumb-currentItemTitle（バッジを含まないタイトル要素）
  *     - 先頭要素は「すべてのファイル」（言語設定で名称が変わる）なので除外する
  *   [共有リンク]
  *     - 共有ボタン:           [data-testid="one-click-share-button"]
@@ -141,7 +141,7 @@
   // ファイルプレビューが開いていればファイル、フォルダ画面ならフォルダとして扱う
   const getContext = () => {
     const previewContainer = document.querySelector(".preview-container");
-    const breadcrumb = document.querySelector(".ItemListBreadcrumb");
+    const breadcrumb = document.querySelector("nav.Breadcrumb");
     return { previewContainer, breadcrumb, isFile: Boolean(previewContainer) };
   };
 
@@ -183,19 +183,17 @@
     }
 
     // 表示中のパンくずリスト（幅測定用の複製 .is-measurer は除外）
-    const list = breadcrumb.querySelector(
-      ".ItemListBreadcrumb-list:not(.is-measurer)",
-    );
+    const list = breadcrumb.querySelector(".Breadcrumb-list:not(.is-measurer)");
     if (!list) {
       if (openedMenu) folderTreeButton.click();
       return null;
     }
-    list.querySelectorAll(".ItemListBreadcrumb-link").forEach((link) => {
+    list.querySelectorAll(".Breadcrumb-link").forEach((link) => {
       const name = link.textContent.trim();
       if (name) parts.push(name);
     });
     // 現在のフォルダ名（バッジのテキストを除外するためタイトル要素から取得）
-    const current = list.querySelector(".ItemListBreadcrumb-currentItemTitle");
+    const current = list.querySelector(".Breadcrumb-currentItemTitle");
     if (current) {
       const name = current.textContent.trim();
       if (name) parts.push(name);

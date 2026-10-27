@@ -40,7 +40,7 @@ Tampermonkey のメニューに次のコマンドを追加します。
 
 ## 動作の仕組み
 
-- ファイルプレビュー（`.preview-container`）があればファイル、パンくずリスト（`.ItemListBreadcrumb`）があればフォルダとして扱います。
+- ファイルプレビュー（`.preview-container`）があればファイル、パンくずリスト（`nav.Breadcrumb`）があればフォルダとして扱います。
 - フォルダ階層はパンくずリストから取得します。階層が深くて「その他のフォルダ」に折りたたまれている場合はメニューを一時的に開いて読み取り、読み取り後に閉じます。
 - 共有リンクは「共有」ボタンをクリックし、表示される共有リンク入力欄（最大 3 秒待機）から取得します。
 - テキストのコピーには `GM_setClipboard` を使います。リッチテキストは `navigator.clipboard.write` を使い、ページがフォーカスを取り戻すまで（最大 3 秒）待ってから書き込みます。失敗した場合は代わりに Markdown リンクをテキストとしてコピーします。
@@ -52,13 +52,13 @@ Tampermonkey のメニューに次のコマンドを追加します。
 | 区分     | 対象                       | セレクタ / 内容                                                                            |
 | -------- | -------------------------- | ------------------------------------------------------------------------------------------ |
 | 判定     | ファイルプレビュー         | `.preview-container`（存在すればファイルとして扱う）                                       |
-| 判定     | パンくずリスト             | `.ItemListBreadcrumb`                                                                      |
+| 判定     | パンくずリスト             | `nav.Breadcrumb`                                                                           |
 | 判定     | ファイル名                 | `.preview-container` 内の `h1[data-testid="preview-item-name"]`                            |
 | パンくず | 「その他のフォルダ」ボタン | `button.FolderTreeButton`（`aria-expanded` / `aria-controls` でメニューを参照）            |
 | パンくず | 折りたたまれたフォルダ     | 上記メニュー内の `li > a`                                                                  |
-| パンくず | 表示中のリスト             | `.ItemListBreadcrumb-list:not(.is-measurer)`（`.is-measurer` は幅測定用の複製）            |
-| パンくず | 階層のリンク               | `.ItemListBreadcrumb-link`                                                                 |
-| パンくず | 現在のフォルダ名           | `.ItemListBreadcrumb-currentItemTitle`                                                     |
+| パンくず | 表示中のリスト             | `.Breadcrumb-list:not(.is-measurer)`（`.is-measurer` は幅測定用の複製）                    |
+| パンくず | 階層のリンク               | `.Breadcrumb-link`                                                                         |
+| パンくず | 現在のフォルダ名           | `.Breadcrumb-currentItemTitle`                                                             |
 | パンくず | ルート                     | 先頭要素は「すべてのファイル」（言語設定で名称が変わる）なので除外                         |
 | 共有     | 共有ボタン                 | `[data-testid="one-click-share-button"]`（ファイルの場合は `.preview-container` 内に限定） |
 | 共有     | 共有リンク入力欄           | `input[value^="https://"][value*=".box.com/s/"]`（複数ある場合は最後の要素）               |
