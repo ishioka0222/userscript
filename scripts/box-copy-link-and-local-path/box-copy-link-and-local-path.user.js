@@ -2,7 +2,7 @@
 // @name            Box - Copy Link and Local Path
 // @name:ja         Box - リンクとローカルパスをコピー
 // @namespace       https://github.com/ishioka0222/userscript
-// @version         1.0.2
+// @version         1.0.3
 // @description     Adds Tampermonkey menu commands on Box that copy a shared link of the current file/folder as a Markdown / rich text link, or its local Box Drive path.
 // @description:ja  Box で開いているファイル / フォルダの共有リンクを Markdown / リッチテキストのリンクとして、またはローカルの Box Drive のパスをクリップボードにコピーするメニューコマンドを Tampermonkey に追加します。
 // @author          Hiroki Ishioka
@@ -39,14 +39,16 @@
  * 依存しているサイト内部の実装（Box Web アプリ）
  *   [ファイル / フォルダの判定]
  *     - ファイルプレビュー: .preview-container（存在すればファイルとして扱う）
- *     - パンくずリスト:     nav.Breadcrumb
+ *     - パンくずリスト:     .ItemListBreadcrumb（旧 UI）または nav.Breadcrumb（新 UI）
+ *                           Box の UI の版はテナントによって異なることがあるため両方に対応する。
+ *                           以下の <P> は見つかった方の接頭辞（ItemListBreadcrumb / Breadcrumb）
  *     - ファイル名:         .preview-container 内の h1[data-testid="preview-item-name"]
  *   [パンくずリスト → フォルダ階層]
  *     - 「その他のフォルダ」ボタン: button.FolderTreeButton（aria-expanded / aria-controls でメニューを参照）
  *     - 折りたたまれたフォルダ:     上記メニュー内の li > a
- *     - 表示中のリスト:             .Breadcrumb-list:not(.is-measurer)（.is-measurer は幅測定用の複製）
- *     - 階層のリンク:               .Breadcrumb-link
- *     - 現在のフォルダ名:           .Breadcrumb-currentItemTitle（バッジを含まないタイトル要素）
+ *     - 表示中のリスト:             .<P>-list:not(.is-measurer)（.is-measurer は幅測定用の複製）
+ *     - 階層のリンク:               .<P>-link
+ *     - 現在のフォルダ名:           .<P>-currentItemTitle（バッジを含まないタイトル要素）
  *     - 先頭要素は「すべてのファイル」（言語設定で名称が変わる）なので除外する
  *   [共有リンク]
  *     - 共有ボタン:           [data-testid="one-click-share-button"]
@@ -138,10 +140,25 @@
 
   // ---------- Box の画面からの情報取得 ----------
 
+  // パンくずリストのクラス名の接頭辞（Box の UI の版によって異なる）
+  // 旧 UI のクラス名を先に探す（新 UI の .Breadcrumb は汎用的な名前のため）
+  const BREADCRUMB_VARIANTS = [
+    { root: ".ItemListBreadcrumb", prefix: "ItemListBreadcrumb" },
+    { root: "nav.Breadcrumb", prefix: "Breadcrumb" },
+  ];
+
+  const findBreadcrumb = () => {
+    for (const { root, prefix } of BREADCRUMB_VARIANTS) {
+      const el = document.querySelector(root);
+      if (el) return { el, prefix };
+    }
+    return null;
+  };
+
   // ファイルプレビューが開いていればファイル、フォルダ画面ならフォルダとして扱う
   const getContext = () => {
     const previewContainer = document.querySelector(".preview-container");
-    const breadcrumb = document.querySelector("nav.Breadcrumb");
+    const breadcrumb = findBreadcrumb();
     return { previewContainer, breadcrumb, isFile: Boolean(previewContainer) };
   };
 
@@ -154,7 +171,7 @@
 
   // パンくずリストからフォルダ階層（ルート「すべてのファイル」を除く）を取得する
   // 「その他のフォルダ」メニューが閉じていれば開いて読み取り、読み取り後に閉じる
-  const getFolderParts = async (breadcrumb) => {
+  const getFolderParts = async ({ el: breadcrumb, prefix }) => {
     const folderTreeButton = breadcrumb.querySelector(
       "button.FolderTreeButton",
     );
@@ -183,17 +200,17 @@
     }
 
     // 表示中のパンくずリスト（幅測定用の複製 .is-measurer は除外）
-    const list = breadcrumb.querySelector(".Breadcrumb-list:not(.is-measurer)");
+    const list = breadcrumb.querySelector(`.${prefix}-list:not(.is-measurer)`);
     if (!list) {
       if (openedMenu) folderTreeButton.click();
       return null;
     }
-    list.querySelectorAll(".Breadcrumb-link").forEach((link) => {
+    list.querySelectorAll(`.${prefix}-link`).forEach((link) => {
       const name = link.textContent.trim();
       if (name) parts.push(name);
     });
     // 現在のフォルダ名（バッジのテキストを除外するためタイトル要素から取得）
-    const current = list.querySelector(".Breadcrumb-currentItemTitle");
+    const current = list.querySelector(`.${prefix}-currentItemTitle`);
     if (current) {
       const name = current.textContent.trim();
       if (name) parts.push(name);
